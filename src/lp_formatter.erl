@@ -1,34 +1,34 @@
+%% @doc Rebar3 Pretty Printing of abstract Erlang syntax trees, following our own preferred style.
+%% @reference Check
+%%  <a target="_blank" href="https://github.com/AdRoll/rebar3_format#configuration">README.md</a>
+%%  for more information on the available options.
 -module(lp_formatter).
 
 -behaviour(rebar3_formatter).
--export([
-    format/3
-]).
 
--import(prettypr, [
-    text/1,
-    nest/2,
-    above/2,
-    beside/2,
-    sep/1,
-    par/1,
-    par/2,
-    floating/3,
-    floating/1,
-    break/1,
-    follow/2,
-    follow/3,
-    empty/0
-]).
+-export([format/3]).
 
--import(erl_parse, [
-    preop_prec/1,
-    inop_prec/1,
-    func_prec/0,
-    max_prec/0,
-    type_inop_prec/1,
-    type_preop_prec/1
-]).
+-import(prettypr,
+        [text/1,
+         nest/2,
+         above/2,
+         beside/2,
+         sep/1,
+         par/1,
+         par/2,
+         floating/3,
+         floating/1,
+         break/1,
+         follow/2,
+         follow/3,
+         empty/0]).
+-import(erl_parse,
+        [preop_prec/1,
+         inop_prec/1,
+         func_prec/0,
+         max_prec/0,
+         type_inop_prec/1,
+         type_preop_prec/1]).
 
 -define(PADDING, 2).
 -define(PAPER, 100).
@@ -45,46 +45,48 @@
                     {function, prettypr:document()} |
                     spec.
 
--record(ctxt, {
-    prec = 0 :: integer(),
-    sub_indent = ?SUB_INDENT :: non_neg_integer(),
-    break_indent = ?BREAK_INDENT :: non_neg_integer(),
-    clause = undefined :: clause_t() | undefined,
-    paper = ?PAPER :: integer(),
-    ribbon = ?RIBBON :: integer(),
-    user = ?NOUSER :: term(),
-    inline_items = {when_over, 25} :: all | none | {when_over, pos_integer()},
-    inline_clause_bodies = false :: boolean(),
-    inline_expressions = false :: boolean(),
-    empty_lines = [] :: [pos_integer()],
-    encoding = epp:default_encoding() :: epp:source_encoding()
-}).
+-record(ctxt,
+        {prec = 0 :: integer(),
+         sub_indent = ?SUB_INDENT :: non_neg_integer(),
+         break_indent = ?BREAK_INDENT :: non_neg_integer(),
+         clause = undefined :: clause_t() | undefined,
+         paper = ?PAPER :: integer(),
+         ribbon = ?RIBBON :: integer(),
+         user = ?NOUSER :: term(),
+         inline_items = {when_over, 25} :: all | none | {when_over, pos_integer()},
+         inline_clause_bodies = false :: boolean(),
+         inline_expressions = false :: boolean(),
+         empty_lines = [] :: [pos_integer()],
+         encoding = epp:default_encoding() :: epp:source_encoding()}).
 
-%% public
+set_prec(Ctxt, Prec) ->
+    Ctxt#ctxt{prec = Prec}.    % used internally
+
+reset_prec(Ctxt) ->
+    set_prec(Ctxt, 0).    % used internally
+
+%% =====================================================================
+%% @doc Prettyprint/formats an abstract Erlang syntax tree as text in the style of NextRoll.
+%%
+%% @see erl_syntax
+%% @see format/1
+%% @see layout/2
 -spec format(erl_syntax:syntaxTree(),
              [pos_integer()],
              rebar3_formatter:opts()) -> string().
-
 format(Node, EmptyLines, Options) ->
     W = maps:get(paper, Options, ?PAPER),
     L = maps:get(ribbon, Options, ?RIBBON),
     E = maps:get(encoding, Options, utf8),
     FinalEmptyLines = case maps:get(preserve_empty_lines, Options, true) of
-        true ->
-            EmptyLines;
-        false ->
-            []
-    end,
+                        true ->
+                            EmptyLines;
+                        false ->
+                            []
+                      end,
     PreFormatted = prettypr:format(layout(Node, FinalEmptyLines, Options), W, L),
     Formatted = remove_tabs(unicode:characters_to_binary(PreFormatted, E)),
     remove_trailing_spaces(Formatted).
-
-%% private
-set_prec(Ctxt, Prec) ->
-    Ctxt#ctxt {prec = Prec}.
-
-reset_prec(Ctxt) ->
-    set_prec(Ctxt, 0).
 
 remove_tabs(Formatted) ->
     binary:replace(Formatted, <<"\t">>, <<"        ">>, [global]).
@@ -92,22 +94,35 @@ remove_tabs(Formatted) ->
 remove_trailing_spaces(Formatted) ->
     re:replace(Formatted, <<" +\n">>, <<"\n">>, [global, {return, list}]).
 
+%% =====================================================================
+%% @doc Creates an abstract document layout for a syntax tree. The
+%% result represents a set of possible layouts (cf. module `prettypr').
+%% For information on the options, see {@link format/2}; note, however,
+%% that the `paper' and `ribbon' options are ignored by this function.
+%%
+%% This function provides a low-level interface to the pretty printer,
+%% returning a flexible representation of possible layouts, independent
+%% of the paper width eventually to be used for formatting. This can be
+%% included as part of another document and/or further processed
+%% directly by the functions in the `prettypr' module (see `format/2'
+%% for details).
+%%
+%% @see prettypr
+%% @see format/2
 -spec layout(erl_syntax:syntaxTree(),
              [pos_integer()],
              rebar3_formatter:opts()) -> prettypr:document().
-
 layout(Node, EmptyLines, Options) ->
-    lay(Node, #ctxt {
-        paper = maps:get(paper, Options, ?PAPER),
-        ribbon = maps:get(ribbon, Options, ?RIBBON),
-        break_indent = maps:get(break_indent, Options, ?BREAK_INDENT),
-        sub_indent = maps:get(sub_indent, Options, ?SUB_INDENT),
-        inline_clause_bodies = maps:get(inline_clause_bodies, Options, false),
-        inline_expressions = maps:get(inline_expressions, Options, false),
-        inline_items = maps:get(inline_items, Options, {when_over, 25}),
-        empty_lines = EmptyLines,
-        encoding = maps:get(encoding, Options, epp:default_encoding())
-    }).
+    lay(Node,
+        #ctxt{paper = maps:get(paper, Options, ?PAPER),
+              ribbon = maps:get(ribbon, Options, ?RIBBON),
+              break_indent = maps:get(break_indent, Options, ?BREAK_INDENT),
+              sub_indent = maps:get(sub_indent, Options, ?SUB_INDENT),
+              inline_clause_bodies = maps:get(inline_clause_bodies, Options, false),
+              inline_expressions = maps:get(inline_expressions, Options, false),
+              inline_items = maps:get(inline_items, Options, {when_over, 25}),
+              empty_lines = EmptyLines,
+              encoding = maps:get(encoding, Options, epp:default_encoding())}).
 
 lay(Node, Ctxt) ->
     case erl_syntax:has_comments(Node) of
@@ -1102,3 +1117,5 @@ lay_double_colon(D1, D2, Ctxt, with_preceding_space) ->
     follow(beside(D1, lay_text_float(" ::")), D2, Ctxt#ctxt.break_indent);
 lay_double_colon(D1, D2, Ctxt, without_preceding_space) ->
     par([D1, lay_text_float("::"), D2], Ctxt#ctxt.break_indent).
+
+%% =====================================================================
